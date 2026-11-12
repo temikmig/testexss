@@ -1,0 +1,1 @@
+vless://c45c9e3d-9ef9-407c-ab15-a1f478939c47@5.129.239.130:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.nvidia.com&fp=chrome&pbk=Com1WsIemF03qrf8GbgpolZAkBBOrV4nzC4PJd-avAc&sid=5e7c8172c832db0f&spx=%2F&type=tcp#AnyModel-RU-Reality

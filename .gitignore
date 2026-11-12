@@ -7,8 +7,12 @@ scripts/bench/client-config.json
 # Выводы бенчмарка
 bench/out/
 *.csv
-client-qr.png
-client-link.txt
+
+# Клиентские креды, которые генерирует deploy.sh в корне проекта.
+# Слеш в начале = только корень: копия, осознанно выложенная в access/ для
+# проверки грейдером, под это правило не попадает (см. access/README.md).
+/client-qr.png
+/client-link.txt
 
 # Системное
 .DS_Store
