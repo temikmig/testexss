@@ -23,6 +23,18 @@ net.core.somaxconn = 8192
 EOF
 
 sysctl --system >/dev/null
+
+# net.core.default_qdisc действует только на НОВЫЕ интерфейсы: на уже поднятом eth0
+# остался бы fq_codel до перезагрузки. Применяем fq к активному интерфейсу сразу.
+IFACE="$(ip route show default 2>/dev/null | awk '{print $5; exit}')"
+if [ -n "${IFACE:-}" ] && command -v tc >/dev/null 2>&1; then
+  if tc qdisc replace dev "$IFACE" root fq 2>/dev/null; then
+    echo "qdisc fq применён к $IFACE (без перезагрузки)."
+  else
+    echo "ВНИМАНИЕ: не удалось применить fq к $IFACE — вступит в силу после перезагрузки." >&2
+  fi
+fi
+
 echo "Применено. Текущий congestion control: $(sysctl -n net.ipv4.tcp_congestion_control)"
 echo "qdisc по умолчанию: $(sysctl -n net.core.default_qdisc)"
 if ! sysctl -n net.ipv4.tcp_congestion_control | grep -q bbr; then

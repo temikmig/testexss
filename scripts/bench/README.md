@@ -71,7 +71,19 @@ XRAY_PLATFORM=linux/arm64 \    # если локальный кэш образа
 
 - `bench/out/latency-*.csv` — все сэмплы задержки (direct/tunnel)
 - `bench/out/concurrency-*.csv` — throughput и успешность по уровням параллелизма
-- `bench/out/server-*.csv` — CPU%, память, load average сервера по секундам
+- `bench/out/server-*.csv` — **сырые** счётчики сервера по секундам: `ts_ms`,
+  `cpu_usec` (cgroup v2), `cpu_ticks` (`/proc/<pid>/stat`), `mem_bytes`, `rx_bytes`,
+  `tx_bytes`, `load1`. Проценты и Мбит/с считает сводка монитора по дельтам соседних
+  строк — сырьё можно пересчитать заново в любой момент.
+
+Монитор запускать так, чтобы управление вернулось сразу, иначе его окно истечёт до
+начала нагрузки и в CSV будет простой:
+
+```bash
+ssh -f user@server 'cd ~/testexss && ./scripts/bench/server-monitor.sh 200 1 bench/out/server-run.csv > /tmp/mon.log 2>&1'
+# затем СРАЗУ на клиенте: ./scripts/bench/client-bench.sh
+# после прогона сверить, что окно накрыло бенч: первый и последний ts_ms в CSV
+```
 
 CPU% в `docker stats` считается относительно **всех** ядер: 100% = одно полное ядро,
 на 2-ядерном сервере потолок 200%.

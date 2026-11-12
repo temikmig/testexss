@@ -114,7 +114,7 @@ dl_mbps() {
 lat_ms() {
   local t
   t="$(curl -s "$@" --max-time 15 -o /dev/null -w '%{time_total}' "$LAT_URL" 2>/dev/null || echo 0)"
-  awk -v t="$t" 'BEGIN{printf "%.0f", t*1000}'
+  awk -v t="$t" 'BEGIN{printf "%.0f\n", t*1000}'
 }
 
 # ─── 1. Пропускная способность ───────────────────────────────────────────────
@@ -141,16 +141,27 @@ done
 
 # ─── 3. Масштабирование по потокам ───────────────────────────────────────────
 echo
-echo "== 3. Параллельные потоки (по ${STREAM_BYTES} байт каждый, через туннель) =="
-CONCCSV="$OUTDIR/concurrency-$STAMP.csv"; echo "streams,ok,failed,wall_s,aggregate_mbps" > "$CONCCSV"
-printf "   %-8s %-6s %-8s %-9s %s\n" "потоки" "ok" "fail" "время,с" "сумм.Мбит/с"
+echo "== 3. Параллельные потоки + задержка ПОД НАГРУЗКОЙ (по ${STREAM_BYTES} байт на поток) =="
+CONCCSV="$OUTDIR/concurrency-$STAMP.csv"
+echo "streams,ok,failed,wall_s,aggregate_mbps,lat_samples,lat_avg_ms,lat_max_ms" > "$CONCCSV"
+printf "   %-8s %-6s %-8s %-9s %-13s %s\n" "потоки" "ok" "fail" "время,с" "сумм.Мбит/с" "задержка avg/max, мс"
 for C in $CONCURRENCY_LEVELS; do
   tmp="$(mktemp -d)"
   start="$(date +%s.%N)"
+  pids=()
   for n in $(seq 1 "$C"); do
     ( curl -s $PROXY --max-time 120 -o /dev/null -w '%{size_download}' "${DL_URL}${STREAM_BYTES}" > "$tmp/$n" 2>/dev/null || echo 0 > "$tmp/$n" ) &
+    pids+=("$!")
   done
-  wait
+  # Задержка именно ПОД НАГРУЗКОЙ: сэмплируем в отдельном процессе, пока потоки
+  # качают. Флаг-файл снимается после завершения нагрузки, цикл дописывает
+  # последний сэмпл и выходит.
+  touch "$tmp/.load"
+  ( while [ -e "$tmp/.load" ]; do lat_ms $PROXY >> "$tmp/.lat" 2>/dev/null; done ) &
+  latpid="$!"
+  wait "${pids[@]}" 2>/dev/null || true
+  rm -f "$tmp/.load"
+  wait "$latpid" 2>/dev/null || true
   end="$(date +%s.%N)"
   total_bytes=0; ok=0; fail=0
   for n in $(seq 1 "$C"); do
@@ -158,11 +169,13 @@ for C in $CONCURRENCY_LEVELS; do
     if [ "$b" -ge "$STREAM_BYTES" ] 2>/dev/null; then ok=$((ok+1)); else fail=$((fail+1)); fi
     total_bytes=$((total_bytes + b))
   done
-  rm -rf "$tmp"
   wall="$(awk -v a="$start" -v b="$end" 'BEGIN{printf "%.2f", b-a}')"
   mbps="$(awk -v tb="$total_bytes" -v w="$wall" 'BEGIN{if(w>0)printf "%.1f", tb*8/1000000/w; else print 0}')"
-  printf "   %-8s %-6s %-8s %-9s %s\n" "$C" "$ok" "$fail" "$wall" "$mbps"
-  echo "$C,$ok,$fail,$wall,$mbps" >> "$CONCCSV"
+  # Статистика задержки под нагрузкой; 0 = проба не удалась, в среднее не берём.
+  read -r lat_n lat_avg lat_max <<<"$(awk '$1>0{n++; s+=$1; if($1>m)m=$1} END{printf "%d %s %s", n+0, (n?sprintf("%.0f",s/n):"n/a"), (n?sprintf("%.0f",m):"n/a")}' "$tmp/.lat" 2>/dev/null)"
+  printf "   %-8s %-6s %-8s %-9s %-13s %s/%s (n=%s)\n" "$C" "$ok" "$fail" "$wall" "$mbps" "$lat_avg" "$lat_max" "$lat_n"
+  echo "$C,$ok,$fail,$wall,$mbps,$lat_n,$lat_avg,$lat_max" >> "$CONCCSV"
+  rm -rf "$tmp"
 done
 
 echo
