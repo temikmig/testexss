@@ -1,0 +1,44 @@
+# VLESS + XTLS-Reality (Vision) на ядре Xray-core.
+# Конфиг рендерится в ./config/config.json скриптом ./deploy.sh из шаблона + .env.
+#
+# Контейнер слушает 8443 ВНУТРИ (непривилегированный порт => можно сбросить все
+# capabilities), а наружу публикуется ${LISTEN_PORT:-443}. Для DPI значим только
+# внешний порт (443), внутренний роли не играет.
+
+services:
+  xray:
+    image: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.11.9}
+    container_name: reality-xray
+    restart: unless-stopped
+    # Запуск как root ВНУТРИ контейнера: нужно, чтобы процесс прочитал config.json
+    # (права 600, защищают приватный ключ). При cap_drop: ALL + read_only +
+    # no-new-privileges это не ослабляет защиту — привилегий для эскалации нет.
+    user: "0:0"
+    # У официального образа пустой ENTRYPOINT — задаём запуск явно.
+    entrypoint: ["xray", "run", "-config", "/etc/xray/config.json"]
+    ports:
+      - "${LISTEN_PORT:-443}:8443"
+    volumes:
+      - ./config/config.json:/etc/xray/config.json:ro
+    # Усиление: FS только на чтение, никаких новых привилегий, все capabilities сброшены.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Запас файловых дескрипторов под большое число одновременных соединений.
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Healthcheck не задаём намеренно: официальный образ distroless (без shell и
+    # утилит), поэтому любой CMD-SHELL-чек всегда падал бы в "unhealthy".
+    # Валидность конфига проверяется `xray -test` в deploy.sh ДО запуска,
+    # а живость туннеля — реальной клиентской проверкой ПОСЛЕ запуска.

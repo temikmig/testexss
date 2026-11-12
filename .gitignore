@@ -1,0 +1,14 @@
+# Секреты и сгенерированные артефакты — НИКОГДА не коммитить
+.env
+config/config.json
+bench/client-config.json
+scripts/bench/client-config.json
+
+# Выводы бенчмарка
+bench/out/
+*.csv
+client-qr.png
+client-link.txt
+
+# Системное
+.DS_Store
